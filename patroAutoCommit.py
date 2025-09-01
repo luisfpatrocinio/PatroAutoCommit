@@ -51,13 +51,6 @@ def colored_print(text: str, color: str = "green"):
 def run_git_command(command: list[str], check: bool = True) -> Optional[str]:
     """
     Executes a Git command as a subprocess and returns its output.
-    
-    Args:
-        command (list[str]): The command and its arguments as a list.
-        check (bool): If True, raises an exception for non-zero exit codes.
-        
-    Returns:
-        Optional[str]: The command's stdout on success, None on error.
     """
     try:
         result = subprocess.run(
@@ -66,10 +59,14 @@ def run_git_command(command: list[str], check: bool = True) -> Optional[str]:
             stderr=subprocess.PIPE,
             text=True,
             check=check,
+            encoding="utf-8",  # Adicionado para evitar problemas de decodificação
+            errors="replace"   # Substitui caracteres inválidos por �
         )
         if result.returncode != 0 and check:
              colored_print(f"\nError running command '{' '.join(command)}': {result.stderr.strip()}", "red")
              return None
+        if result.stdout is None:
+            return ""
         return result.stdout.strip()
     except FileNotFoundError:
         colored_print("\nError: 'git' command not found. Is Git installed and in your PATH?", "red")
