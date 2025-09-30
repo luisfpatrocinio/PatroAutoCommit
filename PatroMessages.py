@@ -8,6 +8,15 @@ from datetime import datetime, timedelta
 import google.generativeai as genai
 from typing import Optional # Para tipagem opcional
 
+# --- Adicionado: Importação e carregamento de .env ---
+try:
+    from dotenv import load_dotenv
+    load_dotenv() # Carrega variáveis do arquivo .env na pasta do script/execução
+except ImportError:
+    print("Aviso: A biblioteca 'python-dotenv' não está instalada. A chave API será buscada apenas nas variáveis de ambiente do sistema.")
+# ----------------------------------------------------
+
+
 # Variável de ambiente para a chave da API (o usuário deve configurar isso)
 # Em um ambiente real, o usuário deve garantir que GEMINI_API_KEY esteja configurada.
 API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -17,6 +26,20 @@ SETTINGS_FILE = 'settings.json'
 DEFAULT_SETTINGS = {
     "show_hashes": True
 }
+
+# --- Constante de Instrução do Sistema (Definida globalmente para uso na configuração) ---
+SYSTEM_INSTRUCTION_REPORT = (
+    "Você é um assistente de Daily Report de desenvolvimento de jogos. "
+    "Sua tarefa é analisar as mensagens de commit brutas, o foco planejado e os bloqueios, "
+    "e gerar um Daily Report conciso em Português, seguindo o formato padrão fornecido. "
+    "Resuma os avanços em uma única linha (máximo 150 caracteres), mantendo a objetividade e usando emojis. "
+    "O formato de saída DEVE ser estritamente o seguinte, sem introdução ou conclusão adicionais: "
+    ":white_check_mark: **Avanços:** [Resumo em uma linha]\n"
+    ":pencil: **Foco:** [Lista de itens do foco]\n"
+    ":warning: **Bloqueio:** [Problemas ou N/A]"
+)
+# -------------------------------------------------------------------------------------
+
 
 def load_settings():
     """
@@ -159,6 +182,7 @@ def get_messages_from_hashes(show_hashes):
 def configure_gemini_model() -> Optional[genai.GenerativeModel]:
     """
     Configura e retorna a instância do modelo GenerativeModel do Gemini.
+    O 'system_instruction' é removido do config para evitar o erro de protocolo.
     """
     global API_KEY
     if not API_KEY:
@@ -168,11 +192,16 @@ def configure_gemini_model() -> Optional[genai.GenerativeModel]:
 
     try:
         genai.configure(api_key=API_KEY)
-        generation_config = {
-            "temperature": 0.3, # Mantendo um valor mais baixo para relatórios factuais
+        
+        # Configuração do modelo SEM 'system_instruction' no generation_config (CORREÇÃO)
+        config = {
+            "temperature": 0.3, 
             "max_output_tokens": 1000
         }
-        return genai.GenerativeModel(model_name="gemini-1.5-flash-latest", generation_config=generation_config)
+        
+        # O modelo é configurado com a system_instruction, mas deve ser passado
+        # como contents. Para evitar o erro, removemos o campo.
+        return genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config=config)
     except Exception as e:
         print(f"Erro ao configurar o modelo Gemini: {e}", file=sys.stderr)
         return None
@@ -180,35 +209,28 @@ def configure_gemini_model() -> Optional[genai.GenerativeModel]:
 def generate_daily_report(model: genai.GenerativeModel, raw_commits: str, focus: str = "", blocks: str = "") -> Optional[str]:
     """
     Gera o Daily Report resumido usando o Gemini AI.
+    A instrução do sistema é enviada como parte do prompt do usuário.
     """
-    system_prompt = (
-        "Você é um assistente de Daily Report de desenvolvimento de jogos. "
-        "Sua tarefa é analisar as mensagens de commit brutas, o foco planejado e os bloqueios, "
-        "e gerar um Daily Report conciso em Português, seguindo o formato padrão fornecido. "
-        "Resuma os avanços em uma única linha (máximo 150 caracteres), mantendo a objetividade e usando emojis. "
-        "O formato de saída DEVE ser estritamente o seguinte, sem introdução ou conclusão adicionais: "
-        ":white_check_mark: **Avanços:** [Resumo em uma linha]\n"
-        ":pencil: **Foco:** [Lista de itens do foco]\n"
-        ":warning: **Bloqueio:** [Problemas ou N/A]"
-    )
-
+    
     # Verifica e formata os itens de Foco e Bloqueio em listas
     focus_list = "\n".join([f"* {item.strip()}" for item in focus.split(',') if item.strip()]) if focus else "* N/A"
     blocks_text = blocks if blocks.lower() not in ('n/a', 'nenhum', '') else "Nenhum no momento."
 
+    # Prepara o prompt, garantindo que o modelo saiba sua função e formato
     user_prompt = (
+        f"{SYSTEM_INSTRUCTION_REPORT}\n\n" # Inclui a instrução do sistema diretamente no prompt.
         f"Gere um Daily Report de equipe com base nas seguintes informações:\n\n"
         f"--- MENSAGENS DE COMMIT (AVANÇOS) ---\n{raw_commits}\n\n"
         f"--- FOCO PLANEJADO PARA HOJE ---\n{focus_list}\n\n"
         f"--- BLOQUEIOS / PROBLEMAS ---\n{blocks_text}\n\n"
-        f"Gere o relatório agora, seguindo estritamente o formato de três pontos (Avanços, Foco, Bloqueio) e o prompt do sistema."
+        f"Gere o relatório agora, seguindo estritamente o formato de três pontos (Avanços, Foco, Bloqueio) e a instrução do sistema."
     )
 
     try:
         print("\nGerando Daily Report com Gemini AI...")
+        # Chamada simples, confiando que a instrução do sistema está no contents.
         response = model.generate_content(
-            contents=user_prompt, 
-            system_instruction=system_prompt
+            contents=user_prompt
         )
         return response.text.strip()
     except Exception as e:
