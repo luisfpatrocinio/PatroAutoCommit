@@ -4,6 +4,14 @@ import pyperclip
 import sys
 import json
 from datetime import datetime, timedelta
+# Importação da biblioteca Gemini API
+import google.generativeai as genai
+from typing import Optional # Para tipagem opcional
+
+# Variável de ambiente para a chave da API (o usuário deve configurar isso)
+# Em um ambiente real, o usuário deve garantir que GEMINI_API_KEY esteja configurada.
+API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
 
 SETTINGS_FILE = 'settings.json'
 DEFAULT_SETTINGS = {
@@ -148,6 +156,65 @@ def get_messages_from_hashes(show_hashes):
     print("\nBuscando mensagens de commit...")
     return compile_messages(hashes, show_hashes)
 
+def configure_gemini_model() -> Optional[genai.GenerativeModel]:
+    """
+    Configura e retorna a instância do modelo GenerativeModel do Gemini.
+    """
+    global API_KEY
+    if not API_KEY:
+        print("Erro: A variável de ambiente GEMINI_API_KEY não foi encontrada.", file=sys.stderr)
+        print("Por favor, configure-a para usar o modo de Daily Report automático.")
+        return None
+
+    try:
+        genai.configure(api_key=API_KEY)
+        generation_config = {
+            "temperature": 0.3, # Mantendo um valor mais baixo para relatórios factuais
+            "max_output_tokens": 1000
+        }
+        return genai.GenerativeModel(model_name="gemini-1.5-flash-latest", generation_config=generation_config)
+    except Exception as e:
+        print(f"Erro ao configurar o modelo Gemini: {e}", file=sys.stderr)
+        return None
+
+def generate_daily_report(model: genai.GenerativeModel, raw_commits: str, focus: str = "", blocks: str = "") -> Optional[str]:
+    """
+    Gera o Daily Report resumido usando o Gemini AI.
+    """
+    system_prompt = (
+        "Você é um assistente de Daily Report de desenvolvimento de jogos. "
+        "Sua tarefa é analisar as mensagens de commit brutas, o foco planejado e os bloqueios, "
+        "e gerar um Daily Report conciso em Português, seguindo o formato padrão fornecido. "
+        "Resuma os avanços em uma única linha (máximo 150 caracteres), mantendo a objetividade e usando emojis. "
+        "O formato de saída DEVE ser estritamente o seguinte, sem introdução ou conclusão adicionais: "
+        ":white_check_mark: **Avanços:** [Resumo em uma linha]\n"
+        ":pencil: **Foco:** [Lista de itens do foco]\n"
+        ":warning: **Bloqueio:** [Problemas ou N/A]"
+    )
+
+    # Verifica e formata os itens de Foco e Bloqueio em listas
+    focus_list = "\n".join([f"* {item.strip()}" for item in focus.split(',') if item.strip()]) if focus else "* N/A"
+    blocks_text = blocks if blocks.lower() not in ('n/a', 'nenhum', '') else "Nenhum no momento."
+
+    user_prompt = (
+        f"Gere um Daily Report de equipe com base nas seguintes informações:\n\n"
+        f"--- MENSAGENS DE COMMIT (AVANÇOS) ---\n{raw_commits}\n\n"
+        f"--- FOCO PLANEJADO PARA HOJE ---\n{focus_list}\n\n"
+        f"--- BLOQUEIOS / PROBLEMAS ---\n{blocks_text}\n\n"
+        f"Gere o relatório agora, seguindo estritamente o formato de três pontos (Avanços, Foco, Bloqueio) e o prompt do sistema."
+    )
+
+    try:
+        print("\nGerando Daily Report com Gemini AI...")
+        response = model.generate_content(
+            contents=user_prompt, 
+            system_instruction=system_prompt
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"\nErro na chamada da API Gemini: {e}", file=sys.stderr)
+        return None
+
 def main():
     """
     Oferece opções para obter mensagens de commit e as salva em um arquivo,
@@ -160,7 +227,9 @@ def main():
     print("Escolha uma opção para obter as mensagens de commit:")
     print("1 - Últimos N commits")
     print("2 - Inserir hashes manualmente")
-    print("3 - Commits do Dia Atual e Dia Anterior (Daily Report)")
+    print("3 - Commits do Dia Atual e Dia Anterior (Input para o Report)")
+    print("4 - Gerar Daily Report AUTOMÁTICO (Dia Atual e Dia Anterior + Gemini AI)")
+
 
     choice = input("Opção: ").strip()
     compiled_text = None
@@ -169,34 +238,70 @@ def main():
         try:
             num_commits = int(input("Quantos commits você quer? (ex: 5): ").strip())
             compiled_text = get_latest_commits(num_commits, show_hashes)
+            output_filename = "commits_raw.txt"
+    
         except ValueError:
             print("Entrada inválida. Por favor, insira um número inteiro.", file=sys.stderr)
             return
     elif choice == '2':
         compiled_text = get_messages_from_hashes(show_hashes)
+        output_filename = "commits_raw.txt"
+
     elif choice == '3':
         compiled_text = get_commits_by_date_range(show_hashes)
+        output_filename = "commits_raw.txt"
+    
+    elif choice == '4':
+        # Opção 4: Gerar Daily Report Completo
+        model = configure_gemini_model()
+        if not model:
+            print("Não foi possível configurar o modelo Gemini. Verifique sua chave API.", file=sys.stderr)
+            return
+
+        # Para análise da IA, é sempre bom pegar o raw (com hashes)
+        raw_commits = get_commits_by_date_range(show_hashes=True) 
+        
+        if not raw_commits:
+            print("Nenhum commit encontrado no período para gerar o relatório.", file=sys.stderr)
+            return
+
+        print("\n--- INFORMAÇÕES ADICIONAIS PARA O RELATÓRIO ---")
+        focus = input("Foco planejado para hoje (separado por vírgulas, ex: 'corrigir bug X, iniciar feature Y'): ").strip()
+        blocks = input("Bloqueios ou problemas (N/A se não houver): ").strip()
+        
+        # Gera o relatório
+        report = generate_daily_report(model, raw_commits, focus, blocks)
+        
+        if report:
+            # Compila o texto final (com o título do Daily Report)
+            compiled_text = "@everyone 🚀 Hora do Daily Report! 🚀\n\n" + report
+            output_filename = "daily_report.txt"
+        else:
+            return
+    
     else:
-        print("Opção inválida. Por favor, escolha 1, 2 ou 3.", file=sys.stderr)
+        print("Opção inválida. Por favor, escolha 1, 2, 3 ou 4.", file=sys.stderr)
         return
 
     if not compiled_text:
         print("Nenhuma mensagem de commit válida foi encontrada. Encerrando.", file=sys.stderr)
         return
 
-    # Nome do arquivo de saída
-    output_filename = "commitsMessages.txt"
-
     # Salva as mensagens no arquivo
+    if choice != '4':
+        print(f"\nSalvo como arquivo de commits brutos: '{output_filename}'")
+    else:
+        print(f"\nSalvo como Daily Report final: '{output_filename}'")
+        
     with open(output_filename, "w", encoding='utf-8') as f:
         f.write(compiled_text)
 
     # Copia para a área de transferência
     try:
         pyperclip.copy(compiled_text)
-        print(f"\nSucesso! As mensagens foram salvas em '{output_filename}' e copiadas para a sua área de transferência.")
+        print(f"Sucesso! As mensagens foram salvas em '{output_filename}' e copiadas para a sua área de transferência.")
     except pyperclip.PyperclipException as e:
-        print(f"\nAviso: Não foi possível copiar para a área de transferência. Erro: {e}", file=sys.stderr)
+        print(f"Aviso: Não foi possível copiar para a área de transferência. Erro: {e}", file=sys.stderr)
         print(f"As mensagens ainda foram salvas em '{output_filename}'.")
 
 if __name__ == "__main__":
