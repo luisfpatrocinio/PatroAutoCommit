@@ -10,6 +10,7 @@ from typing import Optional # Para tipagem opcional
 
 # --- Adicionado: Importação e carregamento de .env ---
 try:
+    # Tenta carregar variáveis de ambiente do .env
     from dotenv import load_dotenv
     load_dotenv() # Carrega variáveis do arquivo .env na pasta do script/execução
 except ImportError:
@@ -35,7 +36,7 @@ SYSTEM_INSTRUCTION_REPORT = (
     "Resuma os avanços em uma única linha (máximo 150 caracteres), mantendo a objetividade e usando emojis. "
     "O formato de saída DEVE ser estritamente o seguinte, sem introdução ou conclusão adicionais: "
     ":white_check_mark: **Avanços:** [Resumo em uma linha]\n"
-    ":pencil: **Foco:** [Lista de itens do foco]\n"
+    ":pencil: **Foco:** [Lista de itens do foco, iniciando com '*']\n"
     ":warning: **Bloqueio:** [Problemas ou N/A]"
 )
 # -------------------------------------------------------------------------------------
@@ -65,7 +66,8 @@ def get_commit_message(commit_hash):
         result = subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8')
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        print(f"Erro ao buscar o commit {commit_hash}: {e.stderr}", file=sys.stderr)
+        # Erro comum se o script não estiver no repositório ou o hash for inválido
+        print(f"Erro ao buscar o commit {commit_hash}: {e.stderr.strip()}", file=sys.stderr)
         return None
     except FileNotFoundError:
         print("Erro: O comando 'git' não foi encontrado. Certifique-se de que o Git está instalado e no seu PATH.", file=sys.stderr)
@@ -76,11 +78,11 @@ def get_commit_timestamp(commit_hash):
     Busca o timestamp de um commit a partir do seu hash.
     """
     try:
+        # O formato %ad com --date=format... retorna a data do autor, formatada.
         command = ['git', 'show', '--no-patch', '--no-notes', '--pretty=format:%ad', '--date=format:%Y-%m-%d %H:%M:%S', commit_hash]
         result = subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8')
         return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        print(f"Erro ao buscar o timestamp do commit {commit_hash}: {e.stderr}", file=sys.stderr)
+    except subprocess.CalledProcessError:
         return None
     except FileNotFoundError:
         return None
@@ -109,36 +111,35 @@ def compile_messages(hashes, show_hashes):
             messages.append(format_message(h, timestamp, msg, show_hashes))
     return "".join(messages)
 
-def get_latest_commits(count, show_hashes):
-    """
-    Busca os hashes e as mensagens dos N últimos commits.
-    """
-    try:
-        # Pega apenas o hash (H)
-        command = ['git', 'log', f'-{count}', '--pretty=format:%H']
-        result = subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8')
-        hashes = result.stdout.strip().split('\n')
-        
-        return compile_messages(hashes, show_hashes)
-
-    except subprocess.CalledProcessError as e:
-        print(f"Erro ao obter os últimos commits: {e.stderr}", file=sys.stderr)
-        return None
-
 def get_commits_by_date_range(show_hashes):
     """
-    Busca commits do dia atual e do dia anterior (ideal para daily reports).
+    Busca commits do período necessário:
+    - Segunda-feira (dia 0): Pega 3 dias (Sex, Sáb, Dom) + Hoje. Total de 4 dias no filtro para incluir as 72h + commits de segunda.
+    - Outros dias: Pega 2 dias (Hoje e Ontem).
     """
+    today = datetime.now()
+    
+    # 0 = Segunda-feira, 6 = Domingo
+    if today.weekday() == 0:  
+        # Segunda-feira: retrocede 3 dias (para incluir sexta)
+        days_to_look_back = 3
+        print("Detectado Segunda-feira: Buscando commits dos últimos 3 dias úteis (Sexta, Sábado, Domingo) + Hoje.") 
+    else:
+        # Terça a sexta: retrocede 1 dia (para incluir ontem)
+        days_to_look_back = 1
+        print("Buscando commits de ontem e hoje.")
+
+    # Calcula a data de início (início do dia 'days_to_look_back' atrás)
+    since_date_dt = today - timedelta(days=days_to_look_back)
+    
+    # Formato de data para o Git (YYYY-MM-DD)
+    since_date = since_date_dt.strftime('%Y-%m-%d')
+    until_date = (today + timedelta(days=1)).strftime('%Y-%m-%d') # Vai até o final de hoje
+    
+    
+    print(f"Filtrando commits desde {since_date} (exclusivo) até {today.strftime('%Y-%m-%d')} (inclusivo)...")
+
     try:
-        today = datetime.now()
-        yesterday = today - timedelta(days=1)
-
-        # Formato de data para o Git (YYYY-MM-DD)
-        since_date = yesterday.strftime('%Y-%m-%d')
-        until_date = (today + timedelta(days=1)).strftime('%Y-%m-%d') # Vai até o final de hoje
-        
-        print(f"Buscando commits de {yesterday.strftime('%Y-%m-%d')} até {today.strftime('%Y-%m-%d')}...")
-
         # --since e --until são usados para restringir o período
         command = [
             'git', 'log', 
@@ -149,40 +150,23 @@ def get_commits_by_date_range(show_hashes):
         result = subprocess.run(command, capture_output=True, text=True, check=True, encoding='utf-8')
         hashes = result.stdout.strip().split('\n')
         
-        if not hashes or (len(hashes) == 1 and hashes[0] == ''):
+        # Filtra hashes vazios que podem surgir se não houver commits
+        valid_hashes = [h for h in hashes if h]
+        
+        if not valid_hashes:
             print("Nenhum commit encontrado no período especificado.")
             return None
 
-        return compile_messages(hashes, show_hashes)
+        return compile_messages(valid_hashes, show_hashes)
 
     except subprocess.CalledProcessError as e:
         print(f"Erro ao obter commits por data: {e.stderr}", file=sys.stderr)
         return None
 
 
-def get_messages_from_hashes(show_hashes):
-    """
-    Solicita hashes de commit, busca as mensagens e as compila em um arquivo de texto.
-    """
-    hashes = []
-    print("Digite os hashes dos commits (um por linha). Pressione Enter em uma linha vazia para finalizar.")
-
-    while True:
-        commit_hash = input("Hash do Commit: ").strip()
-        if not commit_hash:
-            break
-        hashes.append(commit_hash)
-
-    if not hashes:
-        return None
-
-    print("\nBuscando mensagens de commit...")
-    return compile_messages(hashes, show_hashes)
-
 def configure_gemini_model() -> Optional[genai.GenerativeModel]:
     """
     Configura e retorna a instância do modelo GenerativeModel do Gemini.
-    O 'system_instruction' é removido do config para evitar o erro de protocolo.
     """
     global API_KEY
     if not API_KEY:
@@ -193,15 +177,14 @@ def configure_gemini_model() -> Optional[genai.GenerativeModel]:
     try:
         genai.configure(api_key=API_KEY)
         
-        # Configuração do modelo SEM 'system_instruction' no generation_config (CORREÇÃO)
+        # Configuração do modelo
         config = {
             "temperature": 0.3, 
             "max_output_tokens": 1000
         }
         
-        # O modelo é configurado com a system_instruction, mas deve ser passado
-        # como contents. Para evitar o erro, removemos o campo.
-        return genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config=config)
+        # O modelo 'gemini-1.5-flash-latest' é o mais recomendado para tarefas de summarização.
+        return genai.GenerativeModel(model_name="gemini-1.5-flash-latest", generation_config=config)
     except Exception as e:
         print(f"Erro ao configurar o modelo Gemini: {e}", file=sys.stderr)
         return None
@@ -213,7 +196,12 @@ def generate_daily_report(model: genai.GenerativeModel, raw_commits: str, focus:
     """
     
     # Verifica e formata os itens de Foco e Bloqueio em listas
-    focus_list = "\n".join([f"* {item.strip()}" for item in focus.split(',') if item.strip()]) if focus else "* N/A"
+    # Certifica-se de que os itens de foco são formatados com um asterisco por linha, se múltiplos.
+    if focus:
+        focus_list = "\n".join([f"* {item.strip()}" for item in focus.split(',') if item.strip()])
+    else:
+        focus_list = "* N/A"
+        
     blocks_text = blocks if blocks.lower() not in ('n/a', 'nenhum', '') else "Nenhum no momento."
 
     # Prepara o prompt, garantindo que o modelo saiba sua função e formato
@@ -239,92 +227,96 @@ def generate_daily_report(model: genai.GenerativeModel, raw_commits: str, focus:
 
 def main():
     """
-    Oferece opções para obter mensagens de commit e as salva em um arquivo,
-    além de copiar para a área de transferência.
+    Função principal para gerar o Daily Report automático.
     """
     settings = load_settings()
     show_hashes = settings.get("show_hashes", True)
-    print(f"Configuração atual: Mostrar hashes nos resultados = {show_hashes}\n")
-
-    print("Escolha uma opção para obter as mensagens de commit:")
-    print("1 - Últimos N commits")
-    print("2 - Inserir hashes manualmente")
-    print("3 - Commits do Dia Atual e Dia Anterior (Input para o Report)")
-    print("4 - Gerar Daily Report AUTOMÁTICO (Dia Atual e Dia Anterior + Gemini AI)")
-
-
-    choice = input("Opção: ").strip()
-    compiled_text = None
-
-    if choice == '1':
-        try:
-            num_commits = int(input("Quantos commits você quer? (ex: 5): ").strip())
-            compiled_text = get_latest_commits(num_commits, show_hashes)
-            output_filename = "commits_raw.txt"
     
-        except ValueError:
-            print("Entrada inválida. Por favor, insira um número inteiro.", file=sys.stderr)
-            return
-    elif choice == '2':
-        compiled_text = get_messages_from_hashes(show_hashes)
-        output_filename = "commits_raw.txt"
-
-    elif choice == '3':
-        compiled_text = get_commits_by_date_range(show_hashes)
-        output_filename = "commits_raw.txt"
-    
-    elif choice == '4':
-        # Opção 4: Gerar Daily Report Completo
-        model = configure_gemini_model()
-        if not model:
-            print("Não foi possível configurar o modelo Gemini. Verifique sua chave API.", file=sys.stderr)
-            return
-
-        # Para análise da IA, é sempre bom pegar o raw (com hashes)
-        raw_commits = get_commits_by_date_range(show_hashes=True) 
-        
-        if not raw_commits:
-            print("Nenhum commit encontrado no período para gerar o relatório.", file=sys.stderr)
-            return
-
-        print("\n--- INFORMAÇÕES ADICIONAIS PARA O RELATÓRIO ---")
-        focus = input("Foco planejado para hoje (separado por vírgulas, ex: 'corrigir bug X, iniciar feature Y'): ").strip()
-        blocks = input("Bloqueios ou problemas (N/A se não houver): ").strip()
-        
-        # Gera o relatório
-        report = generate_daily_report(model, raw_commits, focus, blocks)
-        
-        if report:
-            # Compila o texto final (com o título do Daily Report)
-            compiled_text = "@everyone 🚀 Hora do Daily Report! 🚀\n\n" + report
-            output_filename = "daily_report.txt"
-        else:
-            return
-    
-    else:
-        print("Opção inválida. Por favor, escolha 1, 2, 3 ou 4.", file=sys.stderr)
+    # ----------------------------------------------------------------------
+    # 1. Obter Commits (Automático - 2 ou 3 dias)
+    # ----------------------------------------------------------------------
+    model = configure_gemini_model()
+    if not model:
+        print("Ajuste a sua API Key e tente novamente.")
         return
 
-    if not compiled_text:
-        print("Nenhuma mensagem de commit válida foi encontrada. Encerrando.", file=sys.stderr)
+    # Sempre pega o raw para análise da IA (com hashes)
+    raw_commits = get_commits_by_date_range(show_hashes=True) 
+    
+    if not raw_commits:
+        print("Nenhum commit encontrado no período para gerar o relatório.", file=sys.stderr)
         return
 
-    # Salva as mensagens no arquivo
-    if choice != '4':
-        print(f"\nSalvo como arquivo de commits brutos: '{output_filename}'")
-    else:
-        print(f"\nSalvo como Daily Report final: '{output_filename}'")
-        
+    # ----------------------------------------------------------------------
+    # 2. Coletar Foco e Bloqueios
+    # ----------------------------------------------------------------------
+    print("\n--- INFORMAÇÕES ADICIONAIS PARA O RELATÓRIO ---")
+    focus = input("Foco planejado para hoje (separado por vírgulas, ex: 'corrigir bug X, iniciar feature Y'): ").strip()
+    blocks = input("Bloqueios ou problemas (N/A se não houver): ").strip()
+    
+    # ----------------------------------------------------------------------
+    # 3. Gerar Relatório via Gemini AI
+    # ----------------------------------------------------------------------
+    report = generate_daily_report(model, raw_commits, focus, blocks)
+    
+    if not report:
+        print("Não foi possível gerar o relatório. Encerrando.", file=sys.stderr)
+        return
+
+    # Compila o texto final (SEM o cabeçalho no corpo do texto)
+    compiled_text_body = report
+    output_filename = "daily_report.txt"
+    
+    # Cabeçalho completo para exibição/cópia
+    full_report_text = "@everyone 🚀 Hora do Daily Report! 🚀\n\n" + compiled_text_body
+
+
+    # ----------------------------------------------------------------------
+    # 4. Exibir, Perguntar para Edição e Salvar
+    # ----------------------------------------------------------------------
+    print("\n" + "="*70)
+    print("DAILY REPORT GERADO:")
+    print("="*70)
+    print(compiled_text_body) # Exibe APENAS o corpo
+    print("="*70)
+    
+    
+    # Salva o arquivo temporariamente para edição (usa o texto COMPLETO)
     with open(output_filename, "w", encoding='utf-8') as f:
-        f.write(compiled_text)
+        f.write(full_report_text)
 
-    # Copia para a área de transferência
+    # Copia o texto COMPLETO para a área de transferência
     try:
-        pyperclip.copy(compiled_text)
-        print(f"Sucesso! As mensagens foram salvas em '{output_filename}' e copiadas para a sua área de transferência.")
+        pyperclip.copy(full_report_text)
+        print("\n✔ Sucesso! O relatório foi copiado para a área de transferência.")
     except pyperclip.PyperclipException as e:
-        print(f"Aviso: Não foi possível copiar para a área de transferência. Erro: {e}", file=sys.stderr)
-        print(f"As mensagens ainda foram salvas em '{output_filename}'.")
+        print(f"\n! Aviso: Não foi possível copiar para a área de transferência. Erro: {e}", file=sys.stderr)
+    
+    # Pergunta sobre edição
+    edit_choice = input("Deseja editar o relatório (abrir no bloco de notas) e salvar em arquivo? (s/n): ").strip().lower()
+
+    if edit_choice == 's':
+        try:
+            # Tenta abrir o arquivo no editor de texto padrão
+            if sys.platform == "win32":
+                os.system(f'notepad "{output_filename}"')
+            elif sys.platform == "darwin":
+                os.system(f'open -e "{output_filename}"') # Para macOS
+            else:
+                os.system(f'nano "{output_filename}"') # Para Linux/Outros
+                
+            # Recarrega o conteúdo após a edição
+            with open(output_filename, 'r', encoding='utf-8') as f:
+                final_text = f.read()
+            
+            # Não precisa copiar de novo se o usuário abriu para editar, mas confirma o salvamento
+            print(f"\n✔ Relatório editado e salvo em '{output_filename}'.")
+                
+        except Exception as e:
+            print(f"\n! Erro ao abrir o editor. O arquivo foi salvo em '{output_filename}'. Erro: {e}", file=sys.stderr)
+    else:
+        print(f"\nRelatório não editado. O texto completo (com cabeçalho) foi salvo em '{output_filename}'.")
+
 
 if __name__ == "__main__":
     main()
