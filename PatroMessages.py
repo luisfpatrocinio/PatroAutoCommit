@@ -183,8 +183,8 @@ def configure_gemini_model() -> Optional[genai.GenerativeModel]:
             "max_output_tokens": 1000
         }
         
-        # O modelo 'gemini-1.5-flash-latest' é o mais recomendado para tarefas de summarização.
-        return genai.GenerativeModel(model_name="gemini-1.5-flash-latest", generation_config=config)
+        # ALTERADO PARA gemini-2.5-flash
+        return genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config=config)
     except Exception as e:
         print(f"Erro ao configurar o modelo Gemini: {e}", file=sys.stderr)
         return None
@@ -202,7 +202,8 @@ def generate_daily_report(model: genai.GenerativeModel, raw_commits: str, focus:
     else:
         focus_list = "* N/A"
         
-    blocks_text = blocks if blocks.lower() not in ('n/a', 'nenhum', '') else "Nenhum no momento."
+    # --- MUDANÇA AQUI: Define como "N/A" se a entrada estiver vazia ou for um sinônimo de ausência de problema. ---
+    blocks_text = "N/A" if blocks.lower().strip() in ('n/a', 'nenhum', '') else blocks
 
     # Prepara o prompt, garantindo que o modelo saiba sua função e formato
     user_prompt = (
@@ -293,29 +294,39 @@ def main():
         print(f"\n! Aviso: Não foi possível copiar para a área de transferência. Erro: {e}", file=sys.stderr)
     
     # Pergunta sobre edição
-    edit_choice = input("Deseja editar o relatório (abrir no bloco de notas) e salvar em arquivo? (s/n): ").strip().lower()
+    save_choice = input("Deseja salvar o relatório em arquivo? (s/n): ").strip().lower()
 
-    if edit_choice == 's':
-        try:
-            # Tenta abrir o arquivo no editor de texto padrão
-            if sys.platform == "win32":
-                os.system(f'notepad "{output_filename}"')
-            elif sys.platform == "darwin":
-                os.system(f'open -e "{output_filename}"') # Para macOS
-            else:
-                os.system(f'nano "{output_filename}"') # Para Linux/Outros
+    if save_choice == 's':
+        edit_choice = input("Deseja editar o relatório antes de salvar permanentemente? (s/n): ").strip().lower()
+        
+        if edit_choice == 's':
+            try:
+                # Tenta abrir o arquivo no editor de texto padrão
+                if sys.platform == "win32":
+                    os.system(f'notepad "{output_filename}"')
+                elif sys.platform == "darwin":
+                    os.system(f'open -e "{output_filename}"') # Para macOS
+                else:
+                    os.system(f'nano "{output_filename}"') # Para Linux/Outros
+                    
+                # Recarrega o conteúdo após a edição para salvar
+                with open(output_filename, 'r', encoding='utf-8') as f:
+                    # Este texto (final_text) é o que foi editado/salvo pelo usuário.
+                    final_text = f.read()
                 
-            # Recarrega o conteúdo após a edição
-            with open(output_filename, 'r', encoding='utf-8') as f:
-                final_text = f.read()
-            
-            # Não precisa copiar de novo se o usuário abriu para editar, mas confirma o salvamento
-            print(f"\n✔ Relatório editado e salvo em '{output_filename}'.")
-                
-        except Exception as e:
-            print(f"\n! Erro ao abrir o editor. O arquivo foi salvo em '{output_filename}'. Erro: {e}", file=sys.stderr)
+                print(f"\n✔ Relatório editado e salvo permanentemente em '{output_filename}'.")
+                    
+            except Exception as e:
+                print(f"\n! Erro ao abrir o editor. O arquivo foi salvo em '{output_filename}'. Erro: {e}", file=sys.stderr)
+        else:
+             # Já está salvo com o texto original da IA no passo anterior
+             print(f"\n✔ Relatório salvo permanentemente em '{output_filename}'.")
+
     else:
-        print(f"\nRelatório não editado. O texto completo (com cabeçalho) foi salvo em '{output_filename}'.")
+        # Se não quiser salvar, remove o arquivo temporário
+        if os.path.exists(output_filename):
+            os.remove(output_filename)
+            print("\nRelatório não salvo em arquivo.")
 
 
 if __name__ == "__main__":
