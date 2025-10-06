@@ -1,0 +1,73 @@
+Você é um assistente de Daily Report de desenvolvimento de jogos. Sua tarefa é analisar as mensagens de commit brutas, o foco planejado e os bloqueios, e gerar um Daily Report conciso em Português, seguindo o formato padrão fornecido. Resuma os avanços em uma única linha (máximo 150 caracteres), mantendo a objetividade e **EVITANDO QUALQUER EMOJI no texto do resumo e nos itens de Foco/Bloqueio**.O formato de saída DEVE ser estritamente o seguinte, usando APENAS os emojis indicados nos cabeçalhos, sem introdução ou conclusão adicionais: :white_check_mark: **Avanços:** [Resumo em uma linha]
+:pencil: **Foco:** [Lista de itens do foco, iniciando com '*']
+:warning: **Bloqueio:** [Problemas ou N/A]
+
+Gere um Daily Report de equipe com base nas seguintes informações:
+
+--- MENSAGENS DE COMMIT E AVANÇOS ---
+Commit Hash: 92a729350a0fe692fae4414a13ed8802a3c44021
+Timestamp: 2025-10-06 09:59:53
+Merge branch 'develop' into feat/levelC3F2
+--------------------------------------------------
+Commit Hash: 00678cd7f01707ba8e060d9883d1dc64293a0abc
+Timestamp: 2025-10-03 20:42:26
+Merge pull request #40 from CreativeHandOficial/feat/levelC3F1
+
+Feat/level c3 f1
+--------------------------------------------------
+Commit Hash: 07d13329d24be20d17cf7788f0debd4190085551
+Timestamp: 2025-10-03 20:40:57
+refactor(filters): adjusts filter scaling and updates masks
+
+Refactors filter objects to use consistent scaling properties for normal and held states.
+
+Updates the mask scaling logic for container objects to improve visual consistency and responsiveness.
+The mask update is now triggered by an alarm, deferring the mask update until the end of the step, preventing potential issues with instance creation order.
+
+Removes the `heldSpriteSuffix` property from the filter objects and the oGreenFilter object entirely, streamlining object properties.
+
+Adjusts room instances to accommodate scale changes.
+--------------------------------------------------
+Commit Hash: d4bab36ec66d2a6da15751ecc9ee27cb34f78e3a
+Timestamp: 2025-10-03 20:09:31
+feat: Create level C3F2 and associated assets
+
+- Add new room rmLevelC3F2 with item cells and game objects.
+- Introduce new container object oBackPack_C3F2.
+- Add new selectable objects: oBallHead, oBattery, oCameraDSLR, oSigmaLens, oTelephotoLens, oTripod.
+- Include corresponding sprites and folders for C3F2 resources.
+- Update LevelColorsData script with C3F2's background and logo colors.
+--------------------------------------------------
+Commit Hash: f7f0df28d7f84e5319a0281f18993c801d5e9e4e
+Timestamp: 2025-10-03 19:25:05
+docs: Clarify oParSelectableObject lifecycle functions
+
+*   Add JSDoc @desc for OnHold and OnDrop functions.
+*   Simplify empty function bodies to {}.
+--------------------------------------------------
+Commit Hash: c23b0079a43fbfa73eb0fdcb00aeb4c4f8462ca0
+Timestamp: 2025-10-03 19:12:30
+fix: Adjust oItemCell positions in rmLevelC3F1
+
+- Adjusted X coordinates for oItemCell instances on the ItemCells layer.
+- Adjusted Y coordinates for oItemCell instances on the ItemCells layer.
+--------------------------------------------------
+Commit Hash: 352418ab24c9f300118e2725563b5698888fd2f0
+Timestamp: 2025-10-03 19:04:13
+feat(level): implement C3F1 with selectable object hold/drop mechanics
+
+- Add new room rmLevelC3F1 and its associated assets.
+- Introduce oBackpackC3F1 and six color filter objects (oBlueFilter, oGreenFilter, oOrangeFilter, oPurpleFilter, oRedFilter, oYellowFilter).
+- Implement OnHold and OnDrop methods in oParSelectableObject and oParFilter for visual feedback.
+- Refactor filter sprite names from s*SideFilter to s*FilterSide.
+- Adjust sprite origins to center for backpack and filter sprites.
+- Integrate rmLevelC3F1 into LevelColorsData and LevelPresetsData.
+--------------------------------------------------
+
+--- FOCO PLANEJADO PARA HOJE ---
+* Implementar mecanicas de objetos desmontáveis.
+
+--- BLOQUEIOS / PROBLEMAS ---
+N/A
+
+Gere o relatório agora, seguindo estritamente o formato de três pontos (Avanços, Foco, Bloqueio) e a instrução do sistema.
