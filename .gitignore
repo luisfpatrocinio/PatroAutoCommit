@@ -1,6 +1,4 @@
-# Ignorar arquivos de ambiente
 .env
-
-# Outras coisas que você já ignora...
 *.pyc
 diff.txt
+lastPrompt.txt

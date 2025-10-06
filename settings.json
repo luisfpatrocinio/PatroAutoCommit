@@ -1,3 +1,9 @@
 {
-    "show_hashes": true
+    "show_hashes": true,
+    "colors": {
+        "success_hex": "#2ecc71",
+        "error_hex": "#e74c3c",
+        "warning_hex": "#f1c40f",
+        "header_hex": "#3498db"
+    }
 }
