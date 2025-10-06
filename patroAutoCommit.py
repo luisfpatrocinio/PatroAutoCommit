@@ -55,18 +55,18 @@ def colored_print(text: str, color: str = "green"):
 def handle_push():
     """Asks the user if they want to push the changes and executes the command."""
     while True:
-        colored_print("\nDeseja fazer o push das mudanças? (s/n) ", "yellow")
+        colored_print("\nDo you want to push the changes? (y/n) ", "yellow")
         choice = input().lower()
-        if choice in ['s', 'y']:
-            colored_print("║ Enviando alterações (push)...\n")
+        if choice in ['y', 's']:
+            colored_print("║ Pushing changes...\n")
             run_git_command(["git", "push"])
             # git push provides its own feedback, so we just break.
             break
         elif choice == 'n':
-            colored_print("Push ignorado.\n", "yellow")
+            colored_print("Push skipped.\n", "yellow")
             break
         else:
-            colored_print("\nEscolha inválida. Por favor, digite 's' ou 'n'.\n", "red")
+            colored_print("\nInvalid choice. Please enter 'y' or 'n'.\n", "red")
 
 def run_git_command(command: list[str], check: bool = True) -> Optional[str]:
     """
@@ -181,10 +181,26 @@ def main():
 
     if staged_diff is None:
         sys.exit(1)
+
     if not staged_diff:
         print() # Add a newline for clean output
-        colored_print("Nenhuma alteração em stage para commitar. Use 'git add <arquivos>' primeiro.\n", "yellow")
-        sys.exit(0)
+        colored_print("No staged changes to commit.", "yellow")
+        colored_print(" Do you want to add all files and proceed? (y/n) ", "yellow")
+        choice = input().lower()
+
+        if choice in ['y', 's']:
+            colored_print("║ Staging all files with 'git add .'...\n", "green")
+            run_git_command(["git", "add", "."])
+            
+            # Re-check for staged changes after adding
+            staged_diff = run_git_command(["git", "diff", "--cached"])
+            
+            if not staged_diff:
+                colored_print("Still no changes to commit after 'git add .'. Aborting.\n", "yellow")
+                sys.exit(0)
+        else:
+            colored_print("Aborting. No files were staged.\n", "red")
+            sys.exit(0)
 
     # --- Diff Size Handling ---
     diff_size = len(staged_diff)
@@ -205,9 +221,9 @@ def main():
         else:
             colored_print("The diff is still too large, even with only .gml files.\n", "red")
             colored_print("The diff will be ignored. Please provide a manual summary for the commit.\n", "yellow")
-            user_summary = input("Digite um breve resumo de suas alterações (em inglês): ").strip()
+            user_summary = input("Enter a brief summary of your changes: ").strip()
             if not user_summary:
-                colored_print("\nÉ necessário um resumo quando o diff é ignorado. Abortando.\n", "red")
+                colored_print("\nA summary is required when the diff is ignored. Aborting.\n", "red")
                 sys.exit(1)
             additional_message = user_summary + "\n\nNote: The full diff was ignored due to its large size."
             staged_diff = "" # Clear the diff entirely
@@ -229,28 +245,29 @@ def main():
     print("---")
 
     while True:
-        colored_print("Deseja commitar com esta mensagem? (s/n/e para editar) ", "yellow")
+        colored_print("Do you want to commit with this message? (y/n/e to edit) ", "yellow")
         choice = input().lower()
         
-        if choice in ['s', 'y']:
+        if choice in ['y', 's']:
             if run_git_command(["git", "commit", "-m", message]) is not None:
-                colored_print("\n✔ Commit criado com sucesso!\n", "green")
+                colored_print("\n✔ Commit created successfully!\n", "green")
                 handle_push()
             break
         elif choice == 'e':
             if run_git_command(["git", "commit", "-m", message, "--edit"]) is not None:
-                colored_print("\n✔ Commit editado e criado com sucesso!\n", "green")
+                colored_print("\n✔ Commit edited and created successfully!\n", "green")
                 handle_push()
             break
         elif choice == 'n':
-            colored_print("\nCommit abortado pelo usuário.\n", "red")
+            colored_print("\nCommit aborted by user.\n", "red")
             break
         else:
-            colored_print("\nEscolha inválida. Por favor, digite 's', 'n', ou 'e'.\n", "red")
+            colored_print("\nInvalid choice. Please enter 'y', 'n', or 'e'.\n", "red")
 
 if __name__ == "__main__":
     if run_git_command(["git", "rev-parse", "--is-inside-work-tree"], check=False) != "true":
         colored_print("Error: This is not a git repository.\n", "red")
         sys.exit(1)
+    # If it is a repo, run the main function.
     main()
 
