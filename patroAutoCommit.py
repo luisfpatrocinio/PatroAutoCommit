@@ -52,6 +52,36 @@ def colored_print(text: str, color: str = "green"):
     sys.stdout.write(f"{color_code}{text}{colors['end']}")
     sys.stdout.flush()
 
+def get_commit_url() -> Optional[str]:
+    """
+    Constructs the URL to the latest commit on the remote repository.
+    
+    Returns:
+        Optional[str]: The commit URL, or None if it cannot be determined.
+    """
+    remote_url = run_git_command(["git", "config", "--get", "remote.origin.url"], check=False)
+    commit_hash = run_git_command(["git", "rev-parse", "HEAD"], check=False)
+
+    if not remote_url or not commit_hash:
+        return None
+
+    # Clean and normalize the remote URL
+    if remote_url.startswith("git@"):
+        # Convert SSH URL to HTTPS URL (e.g., git@github.com:user/repo -> https://github.com/user/repo)
+        remote_url = remote_url.replace(":", "/").replace("git@", "https://")
+    
+    if remote_url.endswith(".git"):
+        remote_url = remote_url[:-4]
+    
+    # Construct the final URL based on the platform
+    if "github.com" in remote_url or "gitlab.com" in remote_url:
+        return f"{remote_url}/commit/{commit_hash}"
+    elif "bitbucket.org" in remote_url:
+        return f"{remote_url}/commits/{commit_hash}"
+    else:
+        # For unknown Git providers, we can't reliably construct a URL
+        return None
+
 def handle_push():
     """Asks the user if they want to push the changes and executes the command."""
     while True:
@@ -59,8 +89,15 @@ def handle_push():
         choice = input().lower()
         if choice in ['y', 's']:
             colored_print("║ Pushing changes...\n")
-            run_git_command(["git", "push"])
-            # git push provides its own feedback, so we just break.
+            # We run the push command first
+            push_result = run_git_command(["git", "push"])
+            
+            # After a successful push, we try to show the commit URL
+            if push_result is not None:
+                commit_url = get_commit_url()
+                if commit_url:
+                    colored_print("✔ Push successful! View your commit here:\n", "green")
+                    colored_print(f"{commit_url}\n", "yellow")
             break
         elif choice == 'n':
             colored_print("Push skipped.\n", "yellow")
