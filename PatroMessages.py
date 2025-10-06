@@ -51,7 +51,7 @@ def colorize_text(text: str, color_name: str) -> str:
 # --- CONFIGURAÇÃO GLOBAL ---
 # Define o diretório do script e o caminho completo para o arquivo de debug.
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DEBUG_PROMPT_FILENAME = "last_prompt_for_debug.txt"
+DEBUG_PROMPT_FILENAME = "lastPrompt.txt"
 DEBUG_PROMPT_FILE = os.path.join(SCRIPT_DIR, DEBUG_PROMPT_FILENAME)
 
 DEFAULT_SETTINGS = {
